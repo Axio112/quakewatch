@@ -1,6 +1,6 @@
 ﻿# Quakewatch — Phase 1
 
-A tiny Flask web app that returns **“Hello, World!”** at `/`.
+A tiny Flask web app that returns **“Hello, World!”**.
 
 ## Prerequisites
 - Docker Desktop (Windows/macOS/Linux)
