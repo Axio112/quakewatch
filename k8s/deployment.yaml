@@ -17,6 +17,23 @@ spec:
           image: vitalybelos112/quakewatch:0.1.0
           ports:
             - containerPort: 5000
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 5000
+            initialDelaySeconds: 3
+            periodSeconds: 5
+            timeoutSeconds: 1
+            failureThreshold: 3
+
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 5000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 1
+            failureThreshold: 3
           resources:
             requests:
               cpu: "100m"
@@ -24,3 +41,14 @@ spec:
             limits:
               cpu: "250m"
               memory: "256Mi"
+          env:
+            - name: APP_MESSAGE
+              valueFrom:
+                configMapKeyRef:
+                  name: quakewatch-config
+                  key: APP_MESSAGE
+            - name: SECRET_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: quakewatch-secret
+                  key: SECRET_TOKEN
