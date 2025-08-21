@@ -14,7 +14,6 @@ docker run --rm -p 5000:5000 vitalybelos112/quakewatch:0.1.0
 http://localhost:5000  → Hello, World!
 - Test 2: 
 Invoke-RestMethod http://localhost:5000 → it should return Hello, World! as well.
-
 - to stop run:
 docker stop quakewatch
 
