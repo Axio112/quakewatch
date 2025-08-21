@@ -1,22 +1,11 @@
 ﻿# Quakewatch — Phase 1
 
-**What this phase delivers**
-- A minimal Flask app returning “Hello, World!”
-- Dockerfile + optional docker-compose.yml
-- A Docker image published to Docker Hub
+A tiny Flask web app that returns **“Hello, World!”** at `/`.
 
-## Local run
-- Pull the image: 
-vitalybelos112/quakewatch:0.1.0
-- Run the container:    
-docker run --rm -p 5000:5000 vitalybelos112/quakewatch:0.1.0
-- Test:   
-http://localhost:5000  → Hello, World!
-- Test 2: 
-Invoke-RestMethod http://localhost:5000 → it should return Hello, World! as well.
-- to stop run:
-docker stop quakewatch
+## Prerequisites
+- Docker Desktop (Windows/macOS/Linux)
 
-
-- Compose: docker compose up --build -d
--to stop run: docker compose down
+## Quick Start (pull & run from Docker Hub)
+```bash
+# Run the prebuilt image
+docker run -d --rm --name quakewatch -p 5000:5000 vitalybelos112/quakewatch:0.1.0
