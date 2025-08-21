@@ -1,0 +1,32 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: quakewatch-ping
+  labels:
+    app: quakewatch
+spec:
+  schedule: "*/5 * * * *"   # <— choose: "*/1 * * * *" or "*/5 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      ttlSecondsAfterFinished: 120
+      template:
+        metadata:
+          labels:
+            app: quakewatch
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: curl
+              image: curlimages/curl:8.10.1
+              args:
+                - -sS
+                - -m
+                - "5"
+                - http://quakewatch
+                - -o
+                - /dev/null
+                - -w
+                - "HTTP %{http_code}\n"
