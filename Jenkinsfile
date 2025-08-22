@@ -1,6 +1,11 @@
 pipeline {
   agent any
 
+  options {
+    // avoid the automatic extra "Declarative: Checkout SCM" stage
+    skipDefaultCheckout(true)
+  }
+
   environment {
     IMAGE     = "vitalybelos112/quakewatch"
     TAG       = "0.1.${env.BUILD_NUMBER}"
@@ -13,7 +18,7 @@ pipeline {
       steps { checkout scm }
     }
 
-    stage('Docker Build') {
+    stage('Build') {
       steps {
         sh '''
           set -eux
@@ -23,7 +28,23 @@ pipeline {
       }
     }
 
-    stage('Docker Login & Push') {
+    stage('Test') {
+      steps {
+        sh '''
+          set -eux
+          # 1) Static chart checks
+          helm lint "$CHART_DIR"
+
+          # 2) Server-side schema validation (no changes applied)
+          helm template "$RELEASE" "$CHART_DIR" \
+            --set image.repository="$IMAGE" \
+            --set image.tag="$TAG" \
+          | kubectl apply -f - --dry-run=server
+        '''
+      }
+    }
+
+    stage('Publish') {
       steps {
         withCredentials([usernamePassword(credentialsId: 'dockerhub',
                                           usernameVariable: 'DOCKERHUB_USER',
@@ -37,7 +58,7 @@ pipeline {
       }
     }
 
-    stage('Deploy with Helm') {
+    stage('Deploy') {
       steps {
         sh '''
           set -eux
@@ -46,6 +67,17 @@ pipeline {
             --set image.repository="$IMAGE" \
             --set image.tag="$TAG" \
             --wait
+        '''
+      }
+    }
+
+    stage('Verify (smoke)') {
+      steps {
+        sh '''
+          set -eux
+          # Call the ClusterIP Service from inside the cluster and look for "Hello"
+          kubectl run curl --rm -i --restart=Never --image=curlimages/curl:8.10.1 -- \
+            -fsS "http://${RELEASE}-helm/" | grep -qi "Hello"
         '''
       }
     }
