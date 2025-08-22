@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: quakewatch-config
+  labels:
+    app: quakewatch
+data:
+  APP_MESSAGE: "Hello from ConfigMap"
