@@ -2,14 +2,17 @@ pipeline {
   agent any
 
   environment {
-    REGISTRY   = 'docker.io'
-    IMAGE_REPO = 'vitalybelos112/quakewatch'
-    RELEASE    = 'quakewatch'
-    CHART_DIR  = 'charts/quakewatch'
-    BUCKET     = '10' // builds per minor (0.1.0..0.1.9 then 0.2.0..)
+    // ---- adjust only these if you ever rename things ----
+    DOCKERHUB_REPO     = 'vitalybelos112/quakewatch'
+    CHART_DIR          = 'charts/quakewatch'
+    RELEASE            = 'quakewatch-helm'   // <— Option A: stick with -helm
+    DOCKERHUB_CRED_ID  = 'dockerhub'
   }
 
+  options { timestamps() }
+
   stages {
+
     stage('Checkout') {
       steps { checkout scm }
     }
@@ -17,77 +20,90 @@ pipeline {
     stage('Compute Tag') {
       steps {
         script {
-          def buildNum = env.BUILD_NUMBER as Integer
-          def bucket   = env.BUCKET as Integer
-          def minor    = ((buildNum - 1) / bucket) + 1       // 1,2,3...
-          def patch    = (buildNum - 1) % bucket             // 0..9
-          env.IMAGE_TAG = "0.${minor}.${patch}"
-          env.IMAGE_URI = "${env.IMAGE_REPO}:${env.IMAGE_TAG}"
+          // Read currently deployed image tag (if any)
+          def currentImage = sh(
+            script: "kubectl get deploy ${RELEASE} -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || true",
+            returnStdout: true
+          ).trim()
+
+          def tag = '0.1.0'
+          if (currentImage) {
+            def parts = currentImage.split(':')
+            if (parts.size() >= 2) { tag = parts[-1] }
+          }
+
+          def nums = tag.tokenize('.').collect { it.isInteger() ? it as Integer : 0 }
+          while (nums.size() < 3) { nums << 0 }       // ensure [maj, min, pat]
+          def (maj, min, pat) = nums
+          pat += 1
+          if (pat > 9) { pat = 0; min += 1 }          // 0.1.9 -> 0.2.0
+
+          env.IMAGE_TAG = "${maj}.${min}.${pat}"
+          echo "Next IMAGE_TAG = ${env.IMAGE_TAG}"
         }
-        sh 'echo "Computed IMAGE_TAG=${IMAGE_TAG}  IMAGE_URI=${IMAGE_URI}"'
       }
     }
 
     stage('Build') {
       steps {
-        sh '''
+        sh """
           set -eux
-          docker build -t "${IMAGE_URI}" .
-          docker image inspect "${IMAGE_URI}"
-        '''
+          docker build -t ${DOCKERHUB_REPO}:${IMAGE_TAG} .
+          docker image inspect ${DOCKERHUB_REPO}:${IMAGE_TAG}
+        """
       }
     }
 
     stage('Test') {
       steps {
-        sh '''
+        sh """
           set -eux
-          helm lint "${CHART_DIR}"
+          helm lint ${CHART_DIR}
+          # Server-side dry-run of the EXACT resources this release manages
           helm template "${RELEASE}" "${CHART_DIR}" \
-            --set image.repository="${IMAGE_REPO}" \
-            --set image.tag="${IMAGE_TAG}" \
+            --set image.repository=${DOCKERHUB_REPO} \
+            --set image.tag=${IMAGE_TAG} \
           | kubectl apply -f - --dry-run=server
-        '''
+        """
       }
     }
 
     stage('Publish') {
       steps {
-        withCredentials([usernamePassword(
-          credentialsId: 'dockerhub',
-          usernameVariable: 'DOCKERHUB_USER',
-          passwordVariable: 'DOCKERHUB_PASS'
-        )]) {
-          sh '''
+        withCredentials([usernamePassword(credentialsId: DOCKERHUB_CRED_ID,
+                                          usernameVariable: 'DOCKERHUB_USER',
+                                          passwordVariable: 'DOCKERHUB_PASS')]) {
+          sh """
             set -eux
-            echo "$DOCKERHUB_PASS" | docker login -u "$DOCKERHUB_USER" --password-stdin
-            docker push "${IMAGE_URI}"
-          '''
+            echo "\$DOCKERHUB_PASS" | docker login -u "\$DOCKERHUB_USER" --password-stdin
+            docker push ${DOCKERHUB_REPO}:${IMAGE_TAG}
+          """
         }
       }
     }
 
     stage('Deploy') {
       steps {
-        sh '''
+        sh """
           set -eux
           kubectl config current-context
           helm upgrade --install "${RELEASE}" "${CHART_DIR}" \
-            --set image.repository="${IMAGE_REPO}" \
-            --set image.tag="${IMAGE_TAG}" \
-            --wait
-        '''
+            --set image.repository=${DOCKERHUB_REPO} \
+            --set image.tag=${IMAGE_TAG} \
+            --wait --atomic
+        """
       }
     }
 
     stage('Verify (smoke)') {
       steps {
-        sh '''
+        sh """
           set -eux
+          # Hit the in-cluster Service by DNS
           kubectl run curl --rm -i --restart=Never \
-            --image=curlimages/curl:8.10.1 -- -fsS http://quakewatch-helm/ \
-          | grep -qi Hello
-        '''
+            --image=curlimages/curl:8.10.1 -- \
+            -fsS http://${RELEASE}/ | grep -qi Hello
+        """
       }
     }
   }
