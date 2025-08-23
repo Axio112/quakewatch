@@ -1,10 +1,10 @@
 pipeline {
   agent any
-  options { timestamps() }
 
   environment {
     IMAGE_REPO = 'vitalybelos112/quakewatch'
     IMAGE_TAG  = "0.1.${BUILD_NUMBER}"
+    HELM_EXTRA = "--set fullnameOverride=quakewatch-helm"
   }
 
   stages {
@@ -28,8 +28,10 @@ pipeline {
           set -eux
           helm lint charts/quakewatch
           helm template quakewatch charts/quakewatch \
+            ${HELM_EXTRA} \
             --set image.repository=${IMAGE_REPO} \
-            --set image.tag=${IMAGE_TAG} | kubectl apply -f - --dry-run=server
+            --set image.tag=${IMAGE_TAG} \
+          | kubectl apply -f - --dry-run=server
         '''
       }
     }
@@ -46,7 +48,6 @@ pipeline {
           '''
         }
       }
-      post { always { sh 'docker logout || true' } }
     }
 
     stage('Deploy') {
@@ -55,9 +56,10 @@ pipeline {
           set -eux
           kubectl config current-context
           helm upgrade --install quakewatch charts/quakewatch \
+            ${HELM_EXTRA} \
             --set image.repository=${IMAGE_REPO} \
             --set image.tag=${IMAGE_TAG} \
-            --wait
+            --wait --atomic --timeout 10m
         '''
       }
     }
@@ -67,9 +69,13 @@ pipeline {
         sh '''
           set -eux
           kubectl run curl --rm -i --restart=Never \
-            --image=curlimages/curl:8.10.1 -- -fsS http://quakewatch-helm/ | grep -qi Hello
+            --image=curlimages/curl:8.10.1 -- -fsS http://quakewatch-helm/ | grep -qi "Hello"
         '''
       }
     }
+  }
+
+  post {
+    always { sh 'docker logout || true' }
   }
 }
