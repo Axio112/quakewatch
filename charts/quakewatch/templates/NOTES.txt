@@ -1,6 +1,8 @@
-1) Get the application URL (NodePort):
-   kubectl get svc {{ .Release.Name }}-helm -n {{ .Release.Namespace }} -o jsonpath='{.spec.ports[0].nodePort}'
+1) Get the application URL:
 
-   Windows + Minikube (Docker driver):
-   kubectl port-forward -n {{ .Release.Namespace }} svc/{{ .Release.Name }}-helm 5000:80
+   # Windows + Minikube (Docker driver):
+   kubectl port-forward -n {{ .Release.Namespace }} svc/{{ include "quakewatch.fullname" . }} 5000:80
    curl http://localhost:5000
+
+   # Or via NodePort:
+   kubectl get svc {{ include "quakewatch.fullname" . }} -n {{ .Release.Namespace }} -o jsonpath='{.spec.ports[0].nodePort}'

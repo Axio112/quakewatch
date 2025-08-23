@@ -1,27 +1,23 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ .Release.Name }}-helm
+  name: {{ include "quakewatch.fullname" . }}
   labels:
-    app.kubernetes.io/name: quakewatch
-    app.kubernetes.io/instance: {{ .Release.Name }}
-    app.kubernetes.io/managed-by: "Helm"
+    {{- include "quakewatch.labels" . | nindent 4 }}
 spec:
-  replicas: {{ .Values.replicaCount }}
+  replicas: {{ .Values.replicaCount | default 2 }}
   selector:
     matchLabels:
-      app.kubernetes.io/name: quakewatch
-      app.kubernetes.io/instance: {{ .Release.Name }}
+      {{- include "quakewatch.selectorLabels" . | nindent 6 }}
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: quakewatch
-        app.kubernetes.io/instance: {{ .Release.Name }}
+        {{- include "quakewatch.selectorLabels" . | nindent 8 }}
     spec:
       containers:
-        - name: quakewatch
+        - name: {{ .Chart.Name }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
-          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          imagePullPolicy: {{ .Values.image.pullPolicy | default "IfNotPresent" }}
           ports:
             - name: http
               containerPort: 5000
@@ -29,13 +25,8 @@ spec:
             - name: APP_MESSAGE
               valueFrom:
                 configMapKeyRef:
-                  name: {{ .Release.Name }}-helm-config
+                  name: {{ include "quakewatch.fullname" . }}-config
                   key: APP_MESSAGE
-            - name: SECRET_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.secret.name | quote }}
-                  key: SECRET_TOKEN
           readinessProbe:
             httpGet:
               path: /
@@ -53,4 +44,9 @@ spec:
             timeoutSeconds: 1
             failureThreshold: 3
           resources:
-{{- toYaml .Values.resources | nindent 12 }}
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi

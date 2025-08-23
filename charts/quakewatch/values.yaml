@@ -1,42 +1,19 @@
-# --- Image ---------------------------------------------------------
+replicaCount: 2
+
 image:
   repository: vitalybelos112/quakewatch
   tag: "0.1.0"
   pullPolicy: IfNotPresent
 
-# --- Replicas / Resources -----------------------------------------
-replicaCount: 2
-
-resources:
-  requests:
-    cpu: 100m
-    memory: 128Mi
-  limits:
-    cpu: 250m
-    memory: 256Mi
-
-# --- Service -------------------------------------------------------
 service:
   type: NodePort
   port: 80
 
-# --- App config (ConfigMap) ---------------------------------------
-app:
-  message: "Hello, World!"
+config:
+  appMessage: "Hello, World!"
 
-# --- Autoscaling (HPA v2) -----------------------------------------
-autoscaling:
+hpa:
   enabled: true
   minReplicas: 2
   maxReplicas: 5
   targetCPUUtilizationPercentage: 50
-
-# --- Secret (managed by Helm when enabled from CI) ----------------
-secret:
-  create: false                  # Jenkins sets this to true via --set
-  name: quakewatch-secret
-  token: ""                      # Jenkins injects via --set-string
-
-# --- (Optional) Ingress switch; keep simple/disabled ---------------
-ingress:
-  enabled: false
