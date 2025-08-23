@@ -1,252 +1,131 @@
-﻿# Quakewatch
+# Quakewatch — Phase 1–3 Quick README
 
-A tiny Flask web app that returns **“Hello, World!”** at `/` — packaged for Docker, Kubernetes (Minikube), and Helm with a Jenkins CI/CD pipeline.
+Minimal, Windows-friendly notes for Docker → Kubernetes → Jenkins (Minikube + Docker driver).
+
+## Prereqs
+- Docker Desktop (with Kubernetes tools), Git
+- Minikube (Docker driver), `kubectl`, `helm`
+- Docker Hub account (credentials ID in Jenkins: `dockerhub`)
 
 ---
 
-## Phase 1 — Docker (local run)
-
-### Prerequisites
-
-- **Docker Desktop** running (Windows/macOS/Linux)
-- **Network access** to pull the image from Docker Hub
-- **Port 5000** available
-
-### Quick Start (PowerShell)
-
-**Pull the prebuilt image**
-
+## Phase 1 — Docker (local)
 ```powershell
-docker pull vitalybelos112/quakewatch:0.1.0
-```
-
-**Run the container**
-
-```powershell
-docker run -d --rm --name quakewatch -p 5000:5000 vitalybelos112/quakewatch:0.1.0
-```
-
-**Test**
-
-```powershell
-Invoke-RestMethod http://localhost:5000
-# => Hello, World!
-```
-
-**Stop**
-
-```powershell
-docker stop quakewatch
+# From repo root
+docker build -t vitalybelos112/quakewatch:dev .
+docker run --rm -p 5000:5000 vitalybelos112/quakewatch:dev
+# Test
+curl http://localhost:5000   # -> Hello, World!
 ```
 
 ---
 
-## Phase 2 — Kubernetes with Minikube
-
-Run the same app on a local Kubernetes cluster.
-
-### Prerequisites
-
-- **Minikube** and **kubectl** installed
-- Docker Desktop running (Minikube Docker driver)
-- Internet access to pull images
-
-### Deploy (PowerShell)
-
+## Phase 2 — Kubernetes (Minikube)
+Apply raw YAML (if needed during testing):
 ```powershell
-# Start Minikube (if not already)
-minikube start --driver=docker
-
-# Apply the Kubernetes manifests from this repo
 kubectl apply -f k8s/
-
-# Wait for rollout
-kubectl rollout status deploy/quakewatch
 ```
 
-### Access the Service
-
+Access service:
 ```powershell
-# Get a local URL (keep this terminal open while testing)
-$URL = minikube service quakewatch --url
-Invoke-RestMethod $URL
-# => Hello, World!
+# either
+minikube service quakewatch --url
+# or
+kubectl port-forward svc/quakewatch 5000:80
+curl http://localhost:5000
 ```
 
-### Autoscaling (HPA)
-
+Metrics + HPA:
 ```powershell
-# Enable metrics (required for HPA CPU targets)
+# Ensure metrics-server is enabled
 minikube addons enable metrics-server
 
-# View resource usage and HPA status
-kubectl top nodes
-kubectl top pods
-kubectl get hpa
+kubectl top pods -l app=quakewatch
+kubectl get hpa quakewatch-hpa
 ```
 
-### Scheduled check (CronJob)
-
+CronJob ping (manual run & logs):
 ```powershell
-# CronJob created in k8s/ will periodically curl the service
-kubectl get cronjob quakewatch-ping
-kubectl get jobs -l app=quakewatch
-```
-
-### Clean up
-
-```powershell
-kubectl delete -f k8s/
-# Optional:
-minikube stop
+$ts  = Get-Date -Format "yyyyMMdd-HHmmss"
+$job = "quakewatch-ping-manual-$ts"
+kubectl create job --from=cronjob/quakewatch-ping $job | Out-Null
+kubectl wait --for=condition=complete job/$job --timeout=180s | Out-Null
+$pod = kubectl get pods -l job-name=$job -o jsonpath='{.items[0].metadata.name}'
+kubectl logs $pod
 ```
 
 ---
 
-## Phase 3 — CI/CD (Jenkins + Helm)
-
-This repo contains a **Helm chart** and a **Jenkinsfile** that build a Docker image, push it to Docker Hub, and deploy it to Minikube via `helm upgrade --install`.
-
-### What’s included
-
-- **Helm chart** in `charts/quakewatch`
-  - Service (NodePort), Deployment (probes/resources), HPA, ConfigMap (`APP_MESSAGE`), existing Secret (`SECRET_TOKEN`)
-- **Jenkinsfile** (pipeline)
-  - Build → Push → Deploy with Helm using image tag `0.1.<BUILD_NUMBER>`
-
-### How to use it (end‑user)
-
-- **Manual CI run:** In Jenkins UI, run **Build Now** on the pipeline for this repo.
-- **What it does:**
-  1. Builds `vitalybelos112/quakewatch:0.1.<BUILD_NUMBER>`
-  2. Pushes to Docker Hub (`vitalybelos112`)
-  3. Deploys with Helm:
-     ```bash
-     helm upgrade --install quakewatch charts/quakewatch \
-       --set image.repository=vitalybelos112/quakewatch \
-       --set image.tag=0.1.<BUILD_NUMBER> \
-       --wait
-     ```
-
-### Verify the deploy
-
+## Phase 3 — CI/CD with Jenkins + Helm
+### Jenkins image (includes kubectl & helm)
 ```powershell
-# Rollout should complete
-kubectl rollout status deploy/quakewatch-helm
-
-# Running image should match 0.1.<BUILD_NUMBER>
-kubectl get deploy quakewatch-helm -o jsonpath='{.spec.template.spec.containers[0].image}'; ""
-# Expected: vitalybelos112/quakewatch:0.1.<BUILD_NUMBER>
+cd ci/jenkins
+docker build -t quakewatch-ci:jenkins .
 ```
 
-### Access the app (Minikube)
-
+### Allow Jenkins-in-Docker to reach Minikube (Windows)
 ```powershell
-# Keep this terminal open (tunnel stays active)
-minikube service quakewatch-helm --url
-# Copy the printed http://127.0.0.1:<PORT> and test in another terminal:
-Invoke-RestMethod http://127.0.0.1:<PORT>
-# => Hello, World!
-```
-
-**Alternative (no tunnel)**
-
-```powershell
-kubectl port-forward svc/quakewatch-helm 5000:80
-Invoke-RestMethod http://localhost:5000
-```
-
-### Manual Helm usage (optional)
-
-```powershell
-# Install/upgrade to a specific image tag
-helm upgrade --install quakewatch charts/quakewatch `
-  --set image.repository=vitalybelos112/quakewatch `
-  --set image.tag=0.1.5 `
-  --wait
-
-# Inspect the release
-helm get values quakewatch
-helm history quakewatch
-helm get manifest quakewatch | Select-String 'image:'
-```
-
-### If Jenkins can’t reach the cluster (Windows, Docker driver)
-
-When Minikube restarts, its API server port can change (e.g., `https://127.0.0.1:<random>`). Inside the Jenkins **container**, `127.0.0.1` points to the container itself. Regenerate a kubeconfig that points Jenkins to `host.docker.internal:<port>` and restart the container with that file mounted.
-
-```powershell
-# 1) Build a kubeconfig Jenkins can use
+# 1) Create kubeconfig that points to host.docker.internal:<apiserver-port>
 $Embedded   = "$HOME\.kube\config.embedded"
 minikube kubectl -- config view --minify --flatten --raw | Out-File -Encoding ascii $Embedded
-
-$Server     = minikube kubectl -- config view --minify -o jsonpath='{.clusters[0].cluster.server}'
-$Port       = ($Server -replace 'https://127\.0\.0\.1:', '')
+$Server = minikube kubectl -- config view --minify -o jsonpath='{.clusters[0].cluster.server}'
+$Port   = ([uri]$Server).Port
 $JenkinsCfg = "$HOME\.kube\config.jenkins"
-
 Copy-Item $Embedded $JenkinsCfg -Force
 kubectl --kubeconfig $JenkinsCfg config set-cluster minikube `
-  --server "https://host.docker.internal:$Port" `
+  --server ("https://host.docker.internal:{0}" -f $Port) `
   --insecure-skip-tls-verify=true | Out-Null
 
-# 2) Restart Jenkins with this kubeconfig mounted (PowerShell-safe)
-docker rm -f jenkins
-$Resolved = (Resolve-Path $JenkinsCfg).Path
-$Mount    = ('{0}:/root/.kube/config:ro' -f $Resolved)
-
+# 2) Run Jenkins
+docker rm -f jenkins 2>$null
 docker run -d --name jenkins -u root `
   -p 8080:8080 -p 50000:50000 `
   -v jenkins_home:/var/jenkins_home `
   -v /var/run/docker.sock:/var/run/docker.sock `
-  -v $Mount `
+  -v "$HOME\.kube\config.jenkins:/root/.kube/config:ro" `
   --restart unless-stopped quakewatch-ci:jenkins
-
-# 3) Sanity checks
-docker exec jenkins kubectl config current-context
-docker exec jenkins kubectl get nodes             # should list the minikube node
 ```
 
-> PowerShell tip: after jsonpath commands use `; ""` to print a newline instead of `; echo`.
+Open **http://localhost:8080** → complete setup (install suggested plugins).  
+Add **Docker Hub** creds in Jenkins: ID `dockerhub` (username/password).
 
-### Troubleshooting
+### Pipeline (Jenkinsfile)
+- **Build:** Docker image tagged `0.1.${BUILD_NUMBER}`
+- **Test:** `helm lint` + `helm template | kubectl apply --dry-run=server`
+- **Publish:** Push image to Docker Hub
+- **Deploy:** `helm upgrade --install quakewatch` with `--set image.*` and `--wait --atomic`
+- **Smoke:** In-cluster curl to `http://quakewatch-helm/` expecting “Hello, World!”
 
-- **Image didn’t update after a build**
-
-  ```powershell
-  helm get values quakewatch
-  helm get manifest quakewatch | Select-String 'image:'
-  kubectl get deploy quakewatch-helm -o jsonpath='{.spec.template.spec.containers[0].image}'; ""
-  ```
-
-  Re-run the Jenkins job or apply a manual `helm upgrade` with `--set image.tag=...`.
-
-- **Minikube URL closes when terminal closes**  
-  Keep the `minikube service ... --url` terminal open, or use `kubectl port-forward`.
+> Chart uses `fullnameOverride=quakewatch-helm` so K8s objects stay stable.
 
 ---
 
-## Repository Map
-
-- `app/` — Minimal Flask app
-- `Dockerfile` — Image for Phase 1 & CI builds
-- `k8s/` — Raw Kubernetes manifests used in Phase 2 (Deployment/Service/HPA/CronJob/ConfigMap/Secret)
-- `charts/quakewatch/` — Helm chart (used by Phase 3)
-- `Jenkinsfile` — Pipeline: build → push → helm upgrade/install
-
-## Versions
-
-- Images: `vitalybelos112/quakewatch:0.1.<BUILD_NUMBER>` (built by Jenkins)
-- Chart: `charts/quakewatch/Chart.yaml` (versioned via `version`; app version via `appVersion`)
-
-## Cleanup
-
+## Quick Checks
 ```powershell
-# Docker
-docker stop quakewatch
+# Deployed image
+kubectl get deploy quakewatch-helm -o jsonpath='{.spec.template.spec.containers[0].image}'
+# Pods
+kubectl get pods -l app.kubernetes.io/instance=quakewatch -o wide
+# Service (port-forward)
+kubectl port-forward svc/quakewatch-helm 5000:80
+curl http://localhost:5000
+# HPA/Metrics
+kubectl top pods -l app.kubernetes.io/instance=quakewatch
+kubectl get hpa quakewatch-helm
+```
 
-# Kubernetes (raw manifests)
-kubectl delete -f k8s/
+## Troubleshooting (short)
+- **metrics unknown:** enable metrics-server; ensure CPU requests on deployment.
+- **CreateContainerConfigError (secret not found):** chart no longer requires a Secret.
+- **Helm stuck / pending-install:** check `helm status quakewatch --show-resources`; delete only the Deployment if selector mismatch, then redeploy.
 
-# Helm release
-helm uninstall quakewatch
+---
+
+## Repo Layout (key)
+```
+charts/quakewatch/      # Helm chart (Deployment/Service/Config/HPA)
+ci/jenkins/Dockerfile   # Jenkins with kubectl+helm
+Jenkinsfile             # CI/CD pipeline
+k8s/                    # (Optional) raw manifests used in Phase 2 experiments
+app/                    # Flask Hello World
 ```
