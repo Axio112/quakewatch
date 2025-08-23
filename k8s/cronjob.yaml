@@ -3,9 +3,9 @@ kind: CronJob
 metadata:
   name: quakewatch-ping
   labels:
-    app: quakewatch
+    app: quakewatch-ping
 spec:
-  schedule: "*/5 * * * *"   # <— choose: "*/1 * * * *" or "*/5 * * * *"
+  schedule: "*/5 * * * *"
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 1
   failedJobsHistoryLimit: 1
@@ -15,18 +15,14 @@ spec:
       template:
         metadata:
           labels:
-            app: quakewatch
+            app: quakewatch-ping
+            job: quakewatch-ping
         spec:
           restartPolicy: OnFailure
           containers:
             - name: curl
               image: curlimages/curl:8.10.1
-              args:
-                - -sS
-                - -m
-                - "5"
-                - http://quakewatch
-                - -o
-                - /dev/null
-                - -w
-                - "HTTP %{http_code}\n"
+              resources:
+                requests:
+                  cpu: 10m      
+              args: ["-sS","-m","5","http://quakewatch","-o","/dev/null","-w","HTTP %{http_code}\n"]
