@@ -114,13 +114,6 @@ kubectl top pods -l app.kubernetes.io/instance=quakewatch
 kubectl get hpa quakewatch-helm
 ```
 
-## Troubleshooting (short)
-- **metrics unknown:** enable metrics-server; ensure CPU requests on deployment.
-- **CreateContainerConfigError (secret not found):** chart no longer requires a Secret.
-- **Helm stuck / pending-install:** check `helm status quakewatch --show-resources`; delete only the Deployment if selector mismatch, then redeploy.
-
----
-
 ## Repo Layout (key)
 ```
 charts/quakewatch/      # Helm chart (Deployment/Service/Config/HPA)
