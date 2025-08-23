@@ -24,5 +24,5 @@ spec:
               image: curlimages/curl:8.10.1
               resources:
                 requests:
-                  cpu: 10m      
+                  cpu: 10m
               args: ["-sS","-m","5","http://quakewatch","-o","/dev/null","-w","HTTP %{http_code}\n"]
