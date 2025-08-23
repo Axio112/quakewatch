@@ -1,8 +1,10 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: {{ include "quakewatch.fullname" . }}-config
+  name: {{ .Release.Name }}-helm-config
   labels:
-    {{- include "quakewatch.labels" . | nindent 4 }}
+    app.kubernetes.io/name: quakewatch
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: "Helm"
 data:
-  APP_MESSAGE: {{ .Values.env.appMessage | quote }}
+  APP_MESSAGE: {{ .Values.app.message | quote }}

@@ -1,39 +1,40 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "quakewatch.fullname" . }}
+  name: {{ .Release.Name }}-helm
   labels:
-    {{- include "quakewatch.labels" . | nindent 4 }}
+    app.kubernetes.io/name: quakewatch
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: "Helm"
 spec:
-  {{- if not .Values.autoscaling.enabled }}
-  replicas: {{ .Values.replicaCount | default 2 }}
-  {{- end }}
+  replicas: {{ .Values.replicaCount }}
   selector:
     matchLabels:
-      {{- include "quakewatch.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/name: quakewatch
+      app.kubernetes.io/instance: {{ .Release.Name }}
   template:
     metadata:
       labels:
-        {{- include "quakewatch.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/name: quakewatch
+        app.kubernetes.io/instance: {{ .Release.Name }}
     spec:
       containers:
-        - name: {{ .Chart.Name }}
+        - name: quakewatch
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           ports:
             - name: http
-              containerPort: {{ .Values.containerPort }}
-              protocol: TCP
+              containerPort: 5000
           env:
             - name: APP_MESSAGE
               valueFrom:
                 configMapKeyRef:
-                  name: {{ include "quakewatch.fullname" . }}-config
+                  name: {{ .Release.Name }}-helm-config
                   key: APP_MESSAGE
             - name: SECRET_TOKEN
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.secret.existingName }}
+                  name: {{ .Values.secret.name | quote }}
                   key: SECRET_TOKEN
           readinessProbe:
             httpGet:
@@ -52,4 +53,4 @@ spec:
             timeoutSeconds: 1
             failureThreshold: 3
           resources:
-            {{- toYaml .Values.resources | nindent 12 }}
+{{- toYaml .Values.resources | nindent 12 }}
