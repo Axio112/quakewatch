@@ -2,9 +2,11 @@ pipeline {
   agent any
 
   environment {
+    REGISTRY   = 'docker.io'
     IMAGE_REPO = 'vitalybelos112/quakewatch'
-    IMAGE_TAG  = "0.1.${BUILD_NUMBER}"
-    HELM_EXTRA = "--set fullnameOverride=quakewatch-helm"
+    RELEASE    = 'quakewatch'
+    CHART_DIR  = 'charts/quakewatch'
+    BUCKET     = '10' // builds per minor (0.1.0..0.1.9 then 0.2.0..)
   }
 
   stages {
@@ -12,12 +14,26 @@ pipeline {
       steps { checkout scm }
     }
 
+    stage('Compute Tag') {
+      steps {
+        script {
+          def buildNum = env.BUILD_NUMBER as Integer
+          def bucket   = env.BUCKET as Integer
+          def minor    = ((buildNum - 1) / bucket) + 1       // 1,2,3...
+          def patch    = (buildNum - 1) % bucket             // 0..9
+          env.IMAGE_TAG = "0.${minor}.${patch}"
+          env.IMAGE_URI = "${env.IMAGE_REPO}:${env.IMAGE_TAG}"
+        }
+        sh 'echo "Computed IMAGE_TAG=${IMAGE_TAG}  IMAGE_URI=${IMAGE_URI}"'
+      }
+    }
+
     stage('Build') {
       steps {
         sh '''
           set -eux
-          docker build -t ${IMAGE_REPO}:${IMAGE_TAG} .
-          docker image inspect ${IMAGE_REPO}:${IMAGE_TAG}
+          docker build -t "${IMAGE_URI}" .
+          docker image inspect "${IMAGE_URI}"
         '''
       }
     }
@@ -26,11 +42,10 @@ pipeline {
       steps {
         sh '''
           set -eux
-          helm lint charts/quakewatch
-          helm template quakewatch charts/quakewatch \
-            ${HELM_EXTRA} \
-            --set image.repository=${IMAGE_REPO} \
-            --set image.tag=${IMAGE_TAG} \
+          helm lint "${CHART_DIR}"
+          helm template "${RELEASE}" "${CHART_DIR}" \
+            --set image.repository="${IMAGE_REPO}" \
+            --set image.tag="${IMAGE_TAG}" \
           | kubectl apply -f - --dry-run=server
         '''
       }
@@ -38,13 +53,15 @@ pipeline {
 
     stage('Publish') {
       steps {
-        withCredentials([usernamePassword(credentialsId: 'dockerhub',
-                                          usernameVariable: 'DOCKERHUB_USER',
-                                          passwordVariable: 'DOCKERHUB_PASS')]) {
+        withCredentials([usernamePassword(
+          credentialsId: 'dockerhub',
+          usernameVariable: 'DOCKERHUB_USER',
+          passwordVariable: 'DOCKERHUB_PASS'
+        )]) {
           sh '''
             set -eux
             echo "$DOCKERHUB_PASS" | docker login -u "$DOCKERHUB_USER" --password-stdin
-            docker push ${IMAGE_REPO}:${IMAGE_TAG}
+            docker push "${IMAGE_URI}"
           '''
         }
       }
@@ -55,11 +72,10 @@ pipeline {
         sh '''
           set -eux
           kubectl config current-context
-          helm upgrade --install quakewatch charts/quakewatch \
-            ${HELM_EXTRA} \
-            --set image.repository=${IMAGE_REPO} \
-            --set image.tag=${IMAGE_TAG} \
-            --wait --atomic --timeout 10m
+          helm upgrade --install "${RELEASE}" "${CHART_DIR}" \
+            --set image.repository="${IMAGE_REPO}" \
+            --set image.tag="${IMAGE_TAG}" \
+            --wait
         '''
       }
     }
@@ -69,13 +85,16 @@ pipeline {
         sh '''
           set -eux
           kubectl run curl --rm -i --restart=Never \
-            --image=curlimages/curl:8.10.1 -- -fsS http://quakewatch-helm/ | grep -qi "Hello"
+            --image=curlimages/curl:8.10.1 -- -fsS http://quakewatch-helm/ \
+          | grep -qi Hello
         '''
       }
     }
   }
 
   post {
-    always { sh 'docker logout || true' }
+    always {
+      sh 'docker logout || true'
+    }
   }
 }
