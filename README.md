@@ -119,6 +119,6 @@ kubectl get hpa quakewatch-helm
 charts/quakewatch/      # Helm chart (Deployment/Service/Config/HPA)
 ci/jenkins/Dockerfile   # Jenkins with kubectl+helm
 Jenkinsfile             # CI/CD pipeline
-k8s/                    # (Optional) raw manifests used in Phase 2 experiments
+k8s/                    # raw manifests used in Phase 2 experiments
 app/                    # Flask Hello World
 ```
