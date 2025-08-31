@@ -7,11 +7,6 @@ pipeline {
     HELM_EXTRA = "--set fullnameOverride=quakewatch-helm"
   }
 
-  stages {
-    stage('Checkout') {
-      steps { checkout scm }
-    }
-
     stage('Build') {
       steps {
         sh '''
